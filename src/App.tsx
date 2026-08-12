@@ -364,13 +364,13 @@ function TaskCard({ task, selected, dragging, onClick, onDragStart, onDragEnd }:
   }, [task.status])
   return (
     <button className={`task-card ${selected ? 'selected' : ''} ${dragging ? 'dragging' : ''}`} draggable onDragStart={onDragStart} onDragEnd={onDragEnd} onClick={onClick}>
-      <div className="task-card-top"><span className={`priority priority-${priorityTone(task.priority)}`}>{priorityLabel(task.priority)}</span><code>{task.id.slice(0, 10)}</code></div>
+      <div className="task-card-top">{task.priority !== 0 && <span className={`priority priority-${priorityTone(task.priority)}`}>{priorityLabel(task.priority)}</span>}<code>{task.id.slice(0, 10)}</code></div>
       <h3>{task.title}</h3>
       {task.body && <p>{task.body}</p>}
-      {task.status === 'running' && <div className="running-indicator"><LoaderCircle className="spin" size={14} /><span>Agent is working</span><strong>{formatElapsed(task.started_at || task.created_at)}</strong></div>}
-      <footer>
-        <span className="assignee"><UserRound size={13} />{task.assignee || 'Unassigned'}</span>
-        <time><Clock3 size={12} />{relativeTime(task.created_at)}</time>
+      <footer className={task.status === 'running' ? 'running-footer' : ''}>
+        {task.status === 'running' && <span className="running-state"><LoaderCircle className="spin" size={12} />Running</span>}
+        <span className="assignee"><UserRound size={12} />{task.assignee || 'Unassigned'}</span>
+        <time>{task.status === 'running' ? formatElapsed(task.started_at || task.created_at) : <><Clock3 size={11} />{relativeTime(task.created_at)}</>}</time>
       </footer>
       {(task.model_override || task.workspace_kind !== 'scratch') && (
         <div className="task-meta">
