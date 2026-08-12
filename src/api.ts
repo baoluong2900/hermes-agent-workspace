@@ -14,7 +14,7 @@ export const api = {
   overview: () => request<WorkspaceOverview>('/api/workspace/overview'),
   sessions: () => request<WorkspaceSession[]>('/api/workspace/sessions'),
   profiles: () => request<HermesProfile[]>('/api/workspace/profiles'),
-  modelOptions: () => request<{ providers: ModelProvider[] }>('/api/model-options'),
+  modelOptions: (refresh = false) => request<{ providers: ModelProvider[]; refreshed: boolean }>(`/api/model-options?refresh=${refresh}`),
   setProfileModel: (name: string, provider: string, model: string) => request<unknown>(`/api/profiles/${encodeURIComponent(name)}/model`, { method: 'PATCH', body: JSON.stringify({ provider, model }) }),
   skills: () => request<HermesSkill[]>('/api/workspace/skills'),
   system: () => request<SystemStatus>('/api/workspace/system'),

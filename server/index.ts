@@ -115,9 +115,10 @@ app.get('/api/workspace/profiles', async (_request, response) => {
   catch (error) { response.status(500).json({ error: errorMessage(error) }) }
 })
 
-app.get('/api/model-options', async (_request, response) => {
+app.get('/api/model-options', async (request, response) => {
   try {
-    const script = "import sys,json; sys.path.insert(0,'/Users/baoluong0209/.hermes/hermes-agent'); from hermes_cli.inventory import build_models_payload,load_picker_context; p=build_models_payload(load_picker_context(),explicit_only=True,canonical_order=True,probe_custom_providers=False); print(json.dumps({'providers':[{'slug':r.get('slug',''),'label':r.get('label') or r.get('slug',''),'models':list(dict.fromkeys(r.get('models') or []))} for r in p.get('providers',[]) if r.get('models')]}))"
+    const refresh = request.query.refresh === 'true'
+    const script = `import sys,json; sys.path.insert(0,'/Users/baoluong0209/.hermes/hermes-agent'); from hermes_cli.inventory import build_model_options_payload,load_picker_context; p=build_model_options_payload(load_picker_context(),explicit_only=True,refresh=${refresh ? 'True' : 'False'}); print(json.dumps({'refreshed':${refresh ? 'True' : 'False'},'providers':[{'slug':r.get('slug',''),'label':r.get('name') or r.get('label') or r.get('slug',''),'models':list(dict.fromkeys(r.get('models') or [])),'source':r.get('source'),'warning':r.get('warning')} for r in p.get('providers',[]) if r.get('models') and r.get('slug') != 'moa']}))`
     const { stdout } = await execFileAsync('python3', ['-c', script], { maxBuffer: 5 * 1024 * 1024, timeout: 30_000 })
     response.json(JSON.parse(stdout.trim().split('\n').at(-1) || '{"providers":[]}'))
   } catch (error) { response.status(500).json({ error: errorMessage(error) }) }
