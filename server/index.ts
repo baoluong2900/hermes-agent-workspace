@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import express from 'express'
 import { z } from 'zod'
+import { parseProjects } from './project-parser'
 
 const execFileAsync = promisify(execFile)
 const app = express()
@@ -135,6 +136,18 @@ app.get('/api/boards', async (_request, response) => {
   }
 })
 
+app.get('/api/projects', async (_request, response) => {
+  try {
+    const list = await hermesText(['project', 'list'])
+    const slugs = list.split('\n').map((line) => line.replace(/^\s*\*?\s*/, '').trim().match(/^([a-z0-9][a-z0-9-]*)\s{2,}/)?.[1]).filter((slug): slug is string => Boolean(slug))
+    const shows = new Map<string, string>()
+    await Promise.all(slugs.map(async (slug) => shows.set(slug, await hermesText(['project', 'show', slug]))))
+    response.json(parseProjects(list, shows))
+  } catch (error) {
+    response.status(500).json({ error: errorMessage(error) })
+  }
+})
+
 app.post('/api/boards', async (request, response) => {
   try {
     const body = z.object({
@@ -142,12 +155,16 @@ app.post('/api/boards', async (request, response) => {
       name: z.string().trim().min(1).max(100).optional(),
       description: z.string().trim().max(500).optional(),
       color: z.string().trim().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+      project: boardSchema.optional(),
+      defaultWorkdir: z.string().trim().max(2000).optional(),
     }).parse(request.body)
     const args = ['boards', 'create', body.slug]
     if (body.name) args.push('--name', body.name)
     if (body.description) args.push('--description', body.description)
     if (body.color) args.push('--color', body.color)
+    if (body.defaultWorkdir) args.push('--default-workdir', body.defaultWorkdir)
     await hermes(args)
+    if (body.project) await hermesText(['project', 'bind-board', body.project, body.slug])
     response.status(201).json({ ok: true })
   } catch (error) {
     response.status(400).json({ error: errorMessage(error) })
