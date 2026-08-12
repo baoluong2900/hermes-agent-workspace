@@ -71,3 +71,18 @@ export type TaskAction =
   | 'comment'
   | 'assign'
   | 'schedule'
+
+export type WorkspaceSession = { title: string; workspace: string | null; lastActive: string; id: string }
+export type HermesProfile = { name: string; model: string; gateway: string; alias: string | null; distribution: string | null }
+export type HermesSkill = { name: string; category: string; source: string; trust: string; status: string }
+export type SystemStatus = { model: string; provider: string; python: string; gateway: string; project: string; activeSessions: number; scheduledJobs: number }
+export type WorkspaceOverview = {
+  sessions: WorkspaceSession[]
+  sessionStats: { sessions: number; messages: number; databaseSize: string }
+  profiles: HermesProfile[]
+  skills: HermesSkill[]
+  skillCount: number
+  system: SystemStatus
+  cron: { count: number; empty: boolean }
+  boards: Board[]
+}

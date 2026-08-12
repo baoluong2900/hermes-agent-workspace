@@ -1,9 +1,9 @@
 {
-  "name": "hermes-kanban-web",
+  "name": "hermes-agent-workspace",
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "A focused local web dashboard for the Hermes Agent Kanban work queue.",
+  "description": "A local operations workspace for Hermes Agent.",
   "scripts": {
     "dev": "concurrently -k -n api,web -c magenta,cyan \"npm:dev:api\" \"npm:dev:web\"",
     "dev:api": "tsx watch server/index.ts",

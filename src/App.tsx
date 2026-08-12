@@ -1,4 +1,5 @@
 import {
+  Activity,
   Archive,
   ArrowRight,
   Ban,
@@ -9,15 +10,20 @@ import {
   CircleDot,
   Clock3,
   Columns3,
-  FileText,
+  Cpu,
+  Database,
+  History,
   Inbox,
   LayoutDashboard,
+  Library,
   LoaderCircle,
   MessageSquare,
+  Network,
   Plus,
   RefreshCw,
   Search,
   Send,
+  Settings,
   ShieldCheck,
   Sparkles,
   UserRound,
@@ -25,8 +31,11 @@ import {
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from './api'
-import type { Assignee, Board, KanbanTask, TaskAction, TaskDetail, TaskStatus } from './types'
+import type { Assignee, Board, KanbanTask, TaskAction, TaskDetail, TaskStatus, WorkspaceOverview } from './types'
+
+type WorkspaceView = 'overview' | 'kanban' | 'sessions' | 'agents' | 'automations' | 'skills' | 'system'
 import './App.css'
+import './workspace.css'
 
 const columns: Array<{ status: TaskStatus; label: string; description: string; icon: typeof Inbox }> = [
   { status: 'triage', label: 'Triage', description: 'Needs a concrete spec', icon: Inbox },
@@ -52,6 +61,7 @@ const actionLabels: Record<TaskAction, string> = {
 }
 
 function App() {
+  const [activeView, setActiveView] = useState<WorkspaceView>('overview')
   const [boards, setBoards] = useState<Board[]>([])
   const [board, setBoard] = useState('default')
   const [tasks, setTasks] = useState<KanbanTask[]>([])
@@ -146,11 +156,15 @@ function App() {
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <div className="brand-mark"><Bot size={20} /><span>Hermes Flow</span></div>
+        <div className="brand-mark"><Bot size={20} /><span>Hermes Workspace</span></div>
         <nav aria-label="Workspace navigation">
-          <button className="active"><LayoutDashboard size={17} /><span>Kanban</span></button>
-          <button disabled><Columns3 size={17} /><span>Workflows</span><em>Soon</em></button>
-          <button disabled><FileText size={17} /><span>Runs</span><em>Soon</em></button>
+          <button className={activeView === 'overview' ? 'active' : ''} onClick={() => setActiveView('overview')}><LayoutDashboard size={17} /><span>Workspace</span></button>
+          <button className={activeView === 'kanban' ? 'active' : ''} onClick={() => setActiveView('kanban')}><Columns3 size={17} /><span>Kanban</span></button>
+          <button className={activeView === 'sessions' ? 'active' : ''} onClick={() => setActiveView('sessions')}><History size={17} /><span>Sessions</span></button>
+          <button className={activeView === 'agents' ? 'active' : ''} onClick={() => setActiveView('agents')}><Bot size={17} /><span>Agents</span></button>
+          <button className={activeView === 'automations' ? 'active' : ''} onClick={() => setActiveView('automations')}><Activity size={17} /><span>Automations</span></button>
+          <button className={activeView === 'skills' ? 'active' : ''} onClick={() => setActiveView('skills')}><Library size={17} /><span>Skills</span></button>
+          <button className={activeView === 'system' ? 'active' : ''} onClick={() => setActiveView('system')}><Settings size={17} /><span>System</span></button>
         </nav>
         <div className="sidebar-foot">
           <span className="connection-dot" />
@@ -158,7 +172,7 @@ function App() {
         </div>
       </aside>
 
-      <main>
+      {activeView === 'kanban' ? <main>
         <header className="topbar">
           <div className="board-picker-wrap">
             <button className="board-picker" onClick={() => setBoardOpen((value) => !value)}>
@@ -233,7 +247,7 @@ function App() {
             })}
           </section>
         </div>
-      </main>
+      </main> : <WorkspacePage view={activeView} onNavigate={setActiveView} />}
 
       {selectedId && detail && (
         <TaskDrawer
@@ -256,6 +270,45 @@ function App() {
     </div>
   )
 }
+
+function WorkspacePage({ view, onNavigate }: { view: Exclude<WorkspaceView, 'kanban'>; onNavigate: (view: WorkspaceView) => void }) {
+  const [overview, setOverview] = useState<WorkspaceOverview | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  useEffect(() => {
+    setLoading(true)
+    void api.overview().then(setOverview).catch((cause) => setError(cause instanceof Error ? cause.message : String(cause))).finally(() => setLoading(false))
+  }, [])
+  if (loading) return <main className="workspace-page"><div className="workspace-loading"><LoaderCircle className="spin" /><span>Loading Hermes workspace…</span></div></main>
+  if (error || !overview) return <main className="workspace-page"><div className="workspace-error"><Ban /><h2>Workspace unavailable</h2><p>{error}</p></div></main>
+  const title = ({ overview: 'Agent workspace', sessions: 'Sessions', agents: 'Agent profiles', automations: 'Automations', skills: 'Skills library', system: 'System' } as const)[view]
+  return <main className="workspace-page">
+    <header className="workspace-toolbar"><div><small>Hermes Agent</small><h1>{title}</h1></div><button className="icon-button" title="Refresh workspace" aria-label="Refresh workspace" onClick={() => window.location.reload()}><RefreshCw size={16} /></button></header>
+    {view === 'overview' && <OverviewView data={overview} onNavigate={onNavigate} />}
+    {view === 'sessions' && <SessionsView data={overview} />}
+    {view === 'agents' && <AgentsView data={overview} />}
+    {view === 'automations' && <AutomationsView data={overview} onNavigate={onNavigate} />}
+    {view === 'skills' && <SkillsView data={overview} />}
+    {view === 'system' && <SystemView data={overview} />}
+  </main>
+}
+
+function OverviewView({ data, onNavigate }: { data: WorkspaceOverview; onNavigate: (view: WorkspaceView) => void }) {
+  const totalTasks = data.boards.reduce((sum, board) => sum + board.total, 0)
+  return <div className="workspace-content">
+    <section className="hero-panel"><div><span className="eyebrow"><Sparkles size={13} /> Control plane online</span><h2>One workspace for every Hermes operation.</h2><p>Coordinate durable tasks, agent profiles, conversation history, automations, skills, and runtime health from a single local interface.</p><div className="hero-actions"><button className="primary-button" onClick={() => onNavigate('kanban')}><Columns3 size={15} />Open Kanban</button><button className="secondary-button" onClick={() => onNavigate('sessions')}><History size={15} />Browse sessions</button></div></div><div className="hero-orbit"><Bot size={34} /><span className="orbit one" /><span className="orbit two" /><i className="node n1" /><i className="node n2" /><i className="node n3" /></div></section>
+    <section className="workspace-kpis"><article><span><History /></span><strong>{data.sessionStats.sessions}</strong><small>Sessions</small><em>{data.sessionStats.messages.toLocaleString()} messages</em></article><article><span><Bot /></span><strong>{data.profiles.length}</strong><small>Agent profiles</small><em>{data.profiles.filter((p) => p.gateway === 'running').length} gateway online</em></article><article><span><Columns3 /></span><strong>{totalTasks}</strong><small>Kanban tasks</small><em>{data.boards.length} isolated board{data.boards.length === 1 ? '' : 's'}</em></article><article><span><Library /></span><strong>{data.skillCount}</strong><small>Enabled skills</small><em>Reusable capability library</em></article></section>
+    <div className="workspace-grid"><section className="workspace-card recent-card"><header><div><h3>Recent sessions</h3><p>Conversation lineage across workspaces</p></div><button onClick={() => onNavigate('sessions')}>View all</button></header><SessionList sessions={data.sessions.slice(0, 6)} /></section><section className="workspace-card runtime-card"><header><div><h3>Runtime</h3><p>Live Hermes environment</p></div><span className="live-pill"><i />Online</span></header><div className="runtime-model"><span><Cpu size={20} /></span><div><small>Active model</small><strong>{data.system.model}</strong><em>{data.system.provider}</em></div></div><dl><div><dt>Gateway</dt><dd>{data.system.gateway}</dd></div><div><dt>Python</dt><dd>{data.system.python}</dd></div><div><dt>Session DB</dt><dd>{data.sessionStats.databaseSize}</dd></div><div><dt>Cron jobs</dt><dd>{data.cron.count}</dd></div></dl></section></div>
+    <section className="workspace-card quick-grid"><header><div><h3>Workspace modules</h3><p>Move from context to execution without leaving the control plane</p></div></header><div><button onClick={() => onNavigate('kanban')}><Columns3 /><span><strong>Kanban</strong><small>Durable multi-agent work queue</small></span><ArrowRight /></button><button onClick={() => onNavigate('agents')}><Bot /><span><strong>Agents</strong><small>Profiles, models, and gateway state</small></span><ArrowRight /></button><button onClick={() => onNavigate('automations')}><Activity /><span><strong>Automations</strong><small>Cron and background operations</small></span><ArrowRight /></button><button onClick={() => onNavigate('skills')}><Library /><span><strong>Skills</strong><small>Reusable procedural capability</small></span><ArrowRight /></button></div></section>
+  </div>
+}
+
+function SessionList({ sessions }: { sessions: WorkspaceOverview['sessions'] }) { return <div className="session-list">{sessions.map((session) => <article key={session.id}><span className="session-icon"><MessageSquare size={15} /></span><div><strong>{session.title}</strong><small>{session.workspace || 'General workspace'} · {session.lastActive}</small></div><code>{session.id.slice(-6)}</code></article>)}</div> }
+function SessionsView({ data }: { data: WorkspaceOverview }) { return <div className="workspace-content"><section className="workspace-kpis compact"><article><span><History /></span><strong>{data.sessionStats.sessions}</strong><small>Total sessions</small></article><article><span><MessageSquare /></span><strong>{data.sessionStats.messages.toLocaleString()}</strong><small>Messages</small></article><article><span><Database /></span><strong>{data.sessionStats.databaseSize}</strong><small>Database</small></article></section><section className="workspace-card"><header><div><h3>Recent conversation history</h3><p>Real sessions from Hermes state.db</p></div></header><SessionList sessions={data.sessions} /></section></div> }
+function AgentsView({ data }: { data: WorkspaceOverview }) { return <div className="workspace-content"><section className="agent-grid">{data.profiles.map((profile) => <article className="agent-profile-card" key={profile.name}><header><span><Bot size={22} /></span><i className={profile.gateway === 'running' ? 'online' : ''} /></header><h3>{profile.name}</h3><p>{profile.model}</p><dl><div><dt>Gateway</dt><dd>{profile.gateway}</dd></div><div><dt>Distribution</dt><dd>{profile.distribution || 'Local profile'}</dd></div></dl></article>)}</section></div> }
+function AutomationsView({ data, onNavigate }: { data: WorkspaceOverview; onNavigate: (view: WorkspaceView) => void }) { return <div className="workspace-content"><section className="empty-state-panel"><span><Activity size={28} /></span><h2>{data.cron.empty ? 'No scheduled automations yet' : `${data.cron.count} automations configured`}</h2><p>Hermes cron jobs run in fresh agent sessions and can collect data, reason over changes, and deliver results back to your channels.</p><div><button className="primary-button" onClick={() => onNavigate('kanban')}><Columns3 size={15} />View work queue</button></div></section></div> }
+function SkillsView({ data }: { data: WorkspaceOverview }) { return <div className="workspace-content"><section className="skill-grid">{data.skills.map((skill) => <article key={skill.name}><span><Library size={16} /></span><div><h3>{skill.name}</h3><p>{skill.category}</p></div><em>{skill.source}</em></article>)}</section></div> }
+function SystemView({ data }: { data: WorkspaceOverview }) { const rows = [['Model', data.system.model], ['Provider', data.system.provider], ['Gateway', data.system.gateway], ['Python', data.system.python], ['Hermes source', data.system.project], ['Session database', data.sessionStats.databaseSize]]; return <div className="workspace-content"><section className="workspace-card system-card"><header><div><h3>Runtime diagnostics</h3><p>Current local Hermes Agent configuration</p></div><span className="live-pill"><i />Operational</span></header><div className="system-rows">{rows.map(([label, value]) => <div key={label}><span>{label}</span><strong>{value}</strong></div>)}</div></section><section className="system-modules"><article><Network /><div><strong>Gateway</strong><small>Messaging, cron, and Kanban dispatcher</small></div><em>{data.system.gateway}</em></article><article><Database /><div><strong>State store</strong><small>{data.sessionStats.sessions} sessions indexed</small></div><em>{data.sessionStats.databaseSize}</em></article><article><Cpu /><div><strong>Inference</strong><small>{data.system.provider}</small></div><em>{data.system.model}</em></article></section></div> }
 
 function TaskCard({ task, selected, onClick }: { task: KanbanTask; selected: boolean; onClick: () => void }) {
   return (

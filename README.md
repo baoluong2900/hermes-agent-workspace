@@ -1,11 +1,17 @@
-# Hermes Kanban Web
+# Hermes Agent Workspace
 
-A focused local web dashboard for the durable Kanban queue built into [Hermes Agent](https://github.com/NousResearch/hermes-agent).
+A local operations workspace for [Hermes Agent](https://github.com/NousResearch/hermes-agent).
 
 It is a separate project and does not modify Agentic Workspace or Hermes Agent source code. The server invokes the installed `hermes kanban` CLI with argument arrays (no shell interpolation), while the React frontend provides a readable board UI.
 
-## Features
+## Workspace modules
 
+- Operational overview with real Hermes runtime data
+- Conversation sessions and state database statistics
+- Agent profiles, models, and gateway state
+- Automations and cron visibility
+- Installed skills library
+- Runtime diagnostics
 - Switch between isolated Hermes Kanban boards
 - View `triage`, `todo`, `ready`, `running`, `review`, `blocked`, `scheduled`, and `done` columns
 - Search tasks and inspect task activity

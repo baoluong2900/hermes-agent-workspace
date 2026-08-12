@@ -29,6 +29,47 @@ async function hermes(args: string[], board?: string): Promise<unknown> {
   }
 }
 
+async function hermesText(args: string[], timeout = 30_000): Promise<string> {
+  const { stdout } = await execFileAsync('hermes', args, {
+    timeout,
+    maxBuffer: 8 * 1024 * 1024,
+    env: { ...process.env, NO_COLOR: '1', TERM: 'dumb' },
+  })
+  return stdout.trim()
+}
+
+function splitTableRow(line: string): string[] {
+  return line.trim().split(/\s{2,}/).map((value) => value.trim()).filter(Boolean)
+}
+
+function parseSessions(output: string) {
+  return output.split('\n').slice(2).map(splitTableRow).filter((row) => row.length >= 4).map((row) => ({
+    title: row[0], workspace: row[1] === '—' ? null : row[1], lastActive: row[2], id: row[3],
+  }))
+}
+
+function parseProfiles(output: string) {
+  return output.split('\n').slice(2).map((line) => splitTableRow(line.replace('◆', ''))).filter((row) => row.length >= 3).map((row) => ({
+    name: row[0], model: row[1], gateway: row[2], alias: row[3] === '—' ? null : row[3], distribution: row[4] === '—' ? null : row[4],
+  }))
+}
+
+function parseSkills(output: string) {
+  return output.split('\n').filter((line) => line.includes('│') && !line.includes('Name')).map((line) => line.split('│').slice(1, -1).map((value) => value.trim())).filter((row) => row.length === 5 && row[0]).map((row) => ({
+    name: row[0], category: row[1] || 'uncategorized', source: row[2], trust: row[3], status: row[4],
+  }))
+}
+
+function parseSessionStats(output: string) {
+  const number = (pattern: RegExp) => Number(output.match(pattern)?.[1] || 0)
+  return { sessions: number(/Total sessions:\s*(\d+)/), messages: number(/Total messages:\s*(\d+)/), databaseSize: output.match(/Database size:\s*([^\n]+)/)?.[1]?.trim() || '—' }
+}
+
+function parseSystemStatus(output: string) {
+  const value = (label: string) => output.match(new RegExp(`${label}:\\s+([^\\n]+)`))?.[1]?.trim() || '—'
+  return { model: value('Model'), provider: value('Provider'), python: value('Python'), gateway: value('Status'), project: value('Project'), activeSessions: Number(output.match(/Active:\s+(\d+)/)?.[1] || 0), scheduledJobs: Number(output.match(/Jobs:\s+(\d+)/)?.[1] || 0) }
+}
+
 function parseBoard(value: unknown): string | undefined {
   if (value === undefined || value === null || value === '') return undefined
   return boardSchema.parse(value)
@@ -47,6 +88,43 @@ app.get('/api/health', async (_request, response) => {
   } catch (error) {
     response.status(503).json({ ok: false, error: errorMessage(error) })
   }
+})
+
+app.get('/api/workspace/overview', async (_request, response) => {
+  try {
+    const [sessionsRaw, statsRaw, profilesRaw, skillsRaw, statusRaw, cronRaw, boards] = await Promise.all([
+      hermesText(['sessions', 'list', '--limit', '8']), hermesText(['sessions', 'stats']), hermesText(['profile', 'list']),
+      hermesText(['skills', 'list', '--enabled-only']), hermesText(['status', '--all'], 60_000), hermesText(['cron', 'list', '--all']),
+      hermes(['boards', 'list', '--json']),
+    ])
+    const skills = parseSkills(skillsRaw)
+    response.json({ sessions: parseSessions(sessionsRaw), sessionStats: parseSessionStats(statsRaw), profiles: parseProfiles(profilesRaw), skills: skills.slice(0, 12), skillCount: skills.length, system: parseSystemStatus(statusRaw), cron: { count: cronRaw.includes('No scheduled jobs') ? 0 : 1, empty: cronRaw.includes('No scheduled jobs') }, boards })
+  } catch (error) { response.status(500).json({ error: errorMessage(error) }) }
+})
+
+app.get('/api/workspace/sessions', async (_request, response) => {
+  try { response.json(parseSessions(await hermesText(['sessions', 'list', '--limit', '50']))) }
+  catch (error) { response.status(500).json({ error: errorMessage(error) }) }
+})
+
+app.get('/api/workspace/profiles', async (_request, response) => {
+  try { response.json(parseProfiles(await hermesText(['profile', 'list']))) }
+  catch (error) { response.status(500).json({ error: errorMessage(error) }) }
+})
+
+app.get('/api/workspace/skills', async (_request, response) => {
+  try { response.json(parseSkills(await hermesText(['skills', 'list']))) }
+  catch (error) { response.status(500).json({ error: errorMessage(error) }) }
+})
+
+app.get('/api/workspace/system', async (_request, response) => {
+  try { response.json(parseSystemStatus(await hermesText(['status', '--all'], 60_000))) }
+  catch (error) { response.status(500).json({ error: errorMessage(error) }) }
+})
+
+app.get('/api/workspace/cron', async (_request, response) => {
+  try { const raw = await hermesText(['cron', 'list', '--all']); response.json({ raw, empty: raw.includes('No scheduled jobs') }) }
+  catch (error) { response.status(500).json({ error: errorMessage(error) }) }
 })
 
 app.get('/api/boards', async (_request, response) => {
@@ -183,7 +261,7 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 app.listen(port, '127.0.0.1', () => {
-  console.log(`Hermes Kanban Web API listening on http://127.0.0.1:${port}`)
+  console.log(`Hermes Agent Workspace listening on http://127.0.0.1:${port}`)
 })
 
 export { app }

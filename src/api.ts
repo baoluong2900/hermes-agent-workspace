@@ -1,4 +1,4 @@
-import type { Assignee, Board, KanbanTask, TaskAction, TaskDetail } from './types'
+import type { Assignee, Board, HermesProfile, HermesSkill, KanbanTask, SystemStatus, TaskAction, TaskDetail, WorkspaceOverview, WorkspaceSession } from './types'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -11,6 +11,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  overview: () => request<WorkspaceOverview>('/api/workspace/overview'),
+  sessions: () => request<WorkspaceSession[]>('/api/workspace/sessions'),
+  profiles: () => request<HermesProfile[]>('/api/workspace/profiles'),
+  skills: () => request<HermesSkill[]>('/api/workspace/skills'),
+  system: () => request<SystemStatus>('/api/workspace/system'),
+  cron: () => request<{ raw: string; empty: boolean }>('/api/workspace/cron'),
   boards: () => request<Board[]>('/api/boards'),
   assignees: (board: string) => request<Assignee[]>(`/api/assignees?board=${encodeURIComponent(board)}`),
   tasks: (board: string, includeArchived = false) =>
