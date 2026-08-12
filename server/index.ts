@@ -1,10 +1,13 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { readdir } from 'node:fs/promises'
+import { cp, mkdtemp, readdir, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { ClassicLevel } from 'classic-level'
 import express from 'express'
 import { z } from 'zod'
 import { parseProjects } from './project-parser'
+import { filterVisibleProviders, parseDesktopVisibleModels, type CatalogProvider } from './model-visibility'
 
 const execFileAsync = promisify(execFile)
 const app = express()
@@ -118,11 +121,33 @@ app.get('/api/workspace/profiles', async (_request, response) => {
 app.get('/api/model-options', async (request, response) => {
   try {
     const refresh = request.query.refresh === 'true'
-    const script = `import sys,json; sys.path.insert(0,'/Users/baoluong0209/.hermes/hermes-agent'); from hermes_cli.inventory import build_model_options_payload,load_picker_context; p=build_model_options_payload(load_picker_context(),explicit_only=True,refresh=${refresh ? 'True' : 'False'}); print(json.dumps({'refreshed':${refresh ? 'True' : 'False'},'providers':[{'slug':r.get('slug',''),'label':r.get('name') or r.get('label') or r.get('slug',''),'models':list(dict.fromkeys(r.get('models') or [])),'source':r.get('source'),'warning':r.get('warning')} for r in p.get('providers',[]) if r.get('models') and r.get('slug') != 'moa']}))`
+    const script = `import sys,json; sys.path.insert(0,'/Users/baoluong0209/.hermes/hermes-agent'); from hermes_cli.inventory import build_model_options_payload,load_picker_context; p=build_model_options_payload(load_picker_context(),explicit_only=True,refresh=${refresh ? 'True' : 'False'}); print(json.dumps({'refreshed':${refresh ? 'True' : 'False'},'providers':[{'slug':r.get('slug',''),'label':r.get('name') or r.get('label') or r.get('slug',''),'models':list(dict.fromkeys(r.get('models') or [])),'featuredModels':list(r.get('featured_models') or []),'source':r.get('source'),'warning':r.get('warning')} for r in p.get('providers',[]) if r.get('models') and r.get('slug') != 'moa']}))`
     const { stdout } = await execFileAsync('python3', ['-c', script], { maxBuffer: 5 * 1024 * 1024, timeout: 30_000 })
-    response.json(JSON.parse(stdout.trim().split('\n').at(-1) || '{"providers":[]}'))
+    const payload = JSON.parse(stdout.trim().split('\n').at(-1) || '{"providers":[]}') as { refreshed: boolean; providers: CatalogProvider[] }
+    const visible = await readDesktopVisibleModels()
+    response.json({ refreshed: payload.refreshed, visibilitySource: visible ? 'Hermes Desktop' : 'catalog defaults', providers: filterVisibleProviders(payload.providers, visible) })
   } catch (error) { response.status(500).json({ error: errorMessage(error) }) }
 })
+
+async function readDesktopVisibleModels(): Promise<Set<string> | null> {
+  const source = path.join(process.env.HOME || '', 'Library', 'Application Support', 'Hermes', 'Local Storage', 'leveldb')
+  const temporary = await mkdtemp(path.join(tmpdir(), 'hermes-model-visibility-'))
+  const copy = path.join(temporary, 'leveldb')
+  try {
+    await cp(source, copy, { recursive: true })
+    await rm(path.join(copy, 'LOCK'), { force: true })
+    const db = new ClassicLevel<Buffer, Buffer>(copy, { keyEncoding: 'buffer', valueEncoding: 'buffer' })
+    try {
+      for await (const [key, value] of db.iterator()) {
+        if (!key.toString('utf8').includes('hermes.desktop.visible-models')) continue
+        const text = value.toString('utf8')
+        return parseDesktopVisibleModels(text.charCodeAt(0) === 1 ? text.slice(1) : text)
+      }
+    } finally { await db.close() }
+    return null
+  } catch { return null }
+  finally { await rm(temporary, { recursive: true, force: true }) }
+}
 
 app.patch('/api/profiles/:name/model', async (request, response) => {
   try {
