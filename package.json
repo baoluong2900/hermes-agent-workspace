@@ -9,10 +9,11 @@
     "dev:api": "tsx watch server/index.ts",
     "dev:web": "vite",
     "typecheck": "tsc -b",
+    "test": "node --import tsx --test tests/*.test.ts",
     "build": "tsc -b && vite build",
     "start": "NODE_ENV=production tsx server/index.ts",
     "lint": "oxlint src server",
-    "check": "npm run lint && npm run build"
+    "check": "npm run lint && npm test && npm run build"
   },
   "dependencies": {
     "express": "^5.2.1",

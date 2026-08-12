@@ -31,6 +31,7 @@ import {
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from './api'
+import { dropActionForStatus } from './kanban-transitions'
 import type { Assignee, Board, KanbanTask, TaskAction, TaskDetail, TaskStatus, WorkspaceOverview } from './types'
 
 type WorkspaceView = 'overview' | 'kanban' | 'sessions' | 'agents' | 'automations' | 'skills' | 'system'
@@ -76,6 +77,8 @@ function App() {
   const [createOpen, setCreateOpen] = useState(false)
   const [boardOpen, setBoardOpen] = useState(false)
   const [actionBusy, setActionBusy] = useState(false)
+  const [draggedTask, setDraggedTask] = useState<KanbanTask | null>(null)
+  const [dragOverStatus, setDragOverStatus] = useState<TaskStatus | null>(null)
 
   const loadBoards = useCallback(async () => {
     const nextBoards = await api.boards()
@@ -151,6 +154,19 @@ function App() {
     } finally {
       setActionBusy(false)
     }
+  }
+
+  async function dropTask(status: TaskStatus) {
+    if (!draggedTask) return
+    const task = draggedTask
+    const transition = dropActionForStatus(task.status, status)
+    setDragOverStatus(null)
+    setDraggedTask(null)
+    if (!transition) {
+      setNotice(status === 'running' ? 'Running is controlled by the Hermes dispatcher.' : `Hermes does not support moving ${task.status} directly to ${status}.`)
+      return
+    }
+    await runAction(task.id, transition.action, transition.reason)
   }
 
   return (
@@ -230,14 +246,21 @@ function App() {
               const columnTasks = filtered.filter((task) => task.status === column.status)
               const Icon = column.icon
               return (
-                <div className={`kanban-column status-${column.status}`} key={column.status} data-status={column.status}>
+                <div
+                  className={`kanban-column status-${column.status} ${dragOverStatus === column.status ? 'drag-over' : ''}`}
+                  key={column.status}
+                  data-status={column.status}
+                  onDragOver={(event) => { if (draggedTask) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setDragOverStatus(column.status) } }}
+                  onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragOverStatus(null) }}
+                  onDrop={(event) => { event.preventDefault(); void dropTask(column.status) }}
+                >
                   <header>
                     <div><span className="column-icon"><Icon size={15} /></span><span><strong>{column.label}</strong><small>{column.description}</small></span></div>
                     <em>{columnTasks.length}</em>
                   </header>
                   <div className="card-stack">
                     {columnTasks.map((task) => (
-                      <TaskCard key={task.id} task={task} selected={task.id === selectedId} onClick={() => setSelectedId(task.id)} />
+                      <TaskCard key={task.id} task={task} selected={task.id === selectedId} dragging={task.id === draggedTask?.id} onClick={() => setSelectedId(task.id)} onDragStart={(event) => { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', task.id); setDraggedTask(task) }} onDragEnd={() => { setDraggedTask(null); setDragOverStatus(null) }} />
                     ))}
                     {!loading && columnTasks.length === 0 && <div className="empty-column"><span /><p>No {column.label.toLowerCase()} tasks</p></div>}
                     {loading && <div className="skeleton-card" />}
@@ -310,9 +333,9 @@ function AutomationsView({ data, onNavigate }: { data: WorkspaceOverview; onNavi
 function SkillsView({ data }: { data: WorkspaceOverview }) { return <div className="workspace-content"><section className="skill-grid">{data.skills.map((skill) => <article key={skill.name}><span><Library size={16} /></span><div><h3>{skill.name}</h3><p>{skill.category}</p></div><em>{skill.source}</em></article>)}</section></div> }
 function SystemView({ data }: { data: WorkspaceOverview }) { const rows = [['Model', data.system.model], ['Provider', data.system.provider], ['Gateway', data.system.gateway], ['Python', data.system.python], ['Hermes source', data.system.project], ['Session database', data.sessionStats.databaseSize]]; return <div className="workspace-content"><section className="workspace-card system-card"><header><div><h3>Runtime diagnostics</h3><p>Current local Hermes Agent configuration</p></div><span className="live-pill"><i />Operational</span></header><div className="system-rows">{rows.map(([label, value]) => <div key={label}><span>{label}</span><strong>{value}</strong></div>)}</div></section><section className="system-modules"><article><Network /><div><strong>Gateway</strong><small>Messaging, cron, and Kanban dispatcher</small></div><em>{data.system.gateway}</em></article><article><Database /><div><strong>State store</strong><small>{data.sessionStats.sessions} sessions indexed</small></div><em>{data.sessionStats.databaseSize}</em></article><article><Cpu /><div><strong>Inference</strong><small>{data.system.provider}</small></div><em>{data.system.model}</em></article></section></div> }
 
-function TaskCard({ task, selected, onClick }: { task: KanbanTask; selected: boolean; onClick: () => void }) {
+function TaskCard({ task, selected, dragging, onClick, onDragStart, onDragEnd }: { task: KanbanTask; selected: boolean; dragging: boolean; onClick: () => void; onDragStart: (event: React.DragEvent<HTMLButtonElement>) => void; onDragEnd: () => void }) {
   return (
-    <button className={`task-card ${selected ? 'selected' : ''}`} onClick={onClick}>
+    <button className={`task-card ${selected ? 'selected' : ''} ${dragging ? 'dragging' : ''}`} draggable onDragStart={onDragStart} onDragEnd={onDragEnd} onClick={onClick}>
       <div className="task-card-top"><span className={`priority priority-${priorityTone(task.priority)}`}>{priorityLabel(task.priority)}</span><code>{task.id.slice(0, 10)}</code></div>
       <h3>{task.title}</h3>
       {task.body && <p>{task.body}</p>}
