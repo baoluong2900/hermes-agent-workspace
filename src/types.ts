@@ -71,6 +71,8 @@ export type TaskAction =
   | 'comment'
   | 'assign'
   | 'schedule'
+  | 'specify'
+  | 'decompose'
 
 export type WorkspaceSession = { title: string; workspace: string | null; lastActive: string; id: string }
 export type HermesProfile = { name: string; model: string; gateway: string; alias: string | null; distribution: string | null }

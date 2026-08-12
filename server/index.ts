@@ -248,7 +248,7 @@ app.post('/api/tasks/:id/action', async (request, response) => {
     const id = taskIdSchema.parse(request.params.id)
     const body = z.object({
       board: boardSchema.optional(),
-      action: z.enum(['promote', 'block', 'unblock', 'review', 'complete', 'archive', 'comment', 'assign', 'schedule']),
+      action: z.enum(['promote', 'block', 'unblock', 'review', 'complete', 'archive', 'comment', 'assign', 'schedule', 'specify', 'decompose']),
       reason: z.string().trim().max(5000).optional(),
       assignee: z.string().trim().max(100).optional(),
     }).parse(request.body)
@@ -281,6 +281,12 @@ app.post('/api/tasks/:id/action', async (request, response) => {
         break
       case 'schedule':
         args = ['schedule', id, body.reason || 'Scheduled from web dashboard']
+        break
+      case 'specify':
+        args = ['specify', id, '--author', 'web-dashboard', '--json']
+        break
+      case 'decompose':
+        args = ['decompose', id, '--author', 'web-dashboard', '--json']
         break
     }
     response.json(await hermes(args, body.board))

@@ -12,6 +12,7 @@ import {
   Columns3,
   Cpu,
   Database,
+  FileText,
   History,
   Inbox,
   LayoutDashboard,
@@ -60,6 +61,8 @@ const actionLabels: Record<TaskAction, string> = {
   comment: 'Add comment',
   assign: 'Assign agent',
   schedule: 'Schedule task',
+  specify: 'Specify task',
+  decompose: 'Decompose task',
 }
 
 function App() {
@@ -353,11 +356,18 @@ function SkillDetailView({ data, slug, onBack }: { data: WorkspaceOverview; slug
 function SystemView({ data }: { data: WorkspaceOverview }) { const rows = [['Model', data.system.model], ['Provider', data.system.provider], ['Gateway', data.system.gateway], ['Python', data.system.python], ['Hermes source', data.system.project], ['Session database', data.sessionStats.databaseSize]]; return <div className="workspace-content"><section className="workspace-card system-card"><header><div><h3>Runtime diagnostics</h3><p>Current local Hermes Agent configuration</p></div><span className="live-pill"><i />Operational</span></header><div className="system-rows">{rows.map(([label, value]) => <div key={label}><span>{label}</span><strong>{value}</strong></div>)}</div></section><section className="system-modules"><article><Network /><div><strong>Gateway</strong><small>Messaging, cron, and Kanban dispatcher</small></div><em>{data.system.gateway}</em></article><article><Database /><div><strong>State store</strong><small>{data.sessionStats.sessions} sessions indexed</small></div><em>{data.sessionStats.databaseSize}</em></article><article><Cpu /><div><strong>Inference</strong><small>{data.system.provider}</small></div><em>{data.system.model}</em></article></section></div> }
 
 function TaskCard({ task, selected, dragging, onClick, onDragStart, onDragEnd }: { task: KanbanTask; selected: boolean; dragging: boolean; onClick: () => void; onDragStart: (event: React.DragEvent<HTMLButtonElement>) => void; onDragEnd: () => void }) {
+  const [, tick] = useState(0)
+  useEffect(() => {
+    if (task.status !== 'running') return
+    const timer = window.setInterval(() => tick((value) => value + 1), 1000)
+    return () => window.clearInterval(timer)
+  }, [task.status])
   return (
     <button className={`task-card ${selected ? 'selected' : ''} ${dragging ? 'dragging' : ''}`} draggable onDragStart={onDragStart} onDragEnd={onDragEnd} onClick={onClick}>
       <div className="task-card-top"><span className={`priority priority-${priorityTone(task.priority)}`}>{priorityLabel(task.priority)}</span><code>{task.id.slice(0, 10)}</code></div>
       <h3>{task.title}</h3>
       {task.body && <p>{task.body}</p>}
+      {task.status === 'running' && <div className="running-indicator"><LoaderCircle className="spin" size={14} /><span>Agent is working</span><strong>{formatElapsed(task.started_at || task.created_at)}</strong></div>}
       <footer>
         <span className="assignee"><UserRound size={13} />{task.assignee || 'Unassigned'}</span>
         <time><Clock3 size={12} />{relativeTime(task.created_at)}</time>
@@ -382,6 +392,14 @@ function TaskDrawer({ detail, assignees, busy, onClose, onAction }: {
   const task = detail.task
   const [comment, setComment] = useState('')
   const [assignee, setAssignee] = useState(task.assignee || '')
+  const [, tick] = useState(0)
+  useEffect(() => {
+    if (task.status !== 'running') return
+    const timer = window.setInterval(() => tick((value) => value + 1), 1000)
+    return () => window.clearInterval(timer)
+  }, [task.status])
+  const activeRun = detail.runs.find((run) => run.status === 'running')
+  const latestHeartbeat = [...detail.events].reverse().find((event) => event.kind === 'heartbeat')
   return (
     <div className="drawer-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <aside className="task-drawer">
@@ -394,10 +412,12 @@ function TaskDrawer({ detail, assignees, busy, onClose, onAction }: {
             <div><dt>Workspace</dt><dd>{task.workspace_kind}</dd></div>
             <div><dt>Created</dt><dd>{formatTime(task.created_at)}</dd></div>
           </dl>
+          {task.status === 'running' && <section className="live-run-panel"><header><LoaderCircle className="spin" size={18} /><div><strong>Agent actively working</strong><small>Live heartbeat from Hermes dispatcher</small></div><time>{formatElapsed(task.started_at || task.created_at)}</time></header><dl><div><dt>Profile</dt><dd>{String(activeRun?.profile || task.assignee || 'default')}</dd></div><div><dt>Worker PID</dt><dd>{String(activeRun?.worker_pid || 'Starting…')}</dd></div><div><dt>Last heartbeat</dt><dd>{latestHeartbeat ? `${relativeTime(latestHeartbeat.created_at)} ago` : 'Waiting…'}</dd></div><div><dt>Workspace</dt><dd>{task.workspace_path || 'Preparing workspace…'}</dd></div></dl></section>}
 
           <section className="drawer-section">
             <h3>Move task</h3>
-            <div className="action-grid">
+            {task.status === 'triage' && <div className="triage-actions"><div><strong>Turn this request into executable work</strong><small>Specify keeps it as one concrete task. Decompose creates smaller linked tasks.</small></div><button disabled={busy} onClick={() => onAction('specify')}><FileText size={14} />Specify task</button><button disabled={busy} onClick={() => onAction('decompose')}><Columns3 size={14} />Decompose</button></div>}
+          <div className="action-grid">
               {(task.status === 'triage' || task.status === 'todo' || task.status === 'blocked' || task.status === 'scheduled') && <button disabled={busy} onClick={() => onAction(task.status === 'blocked' || task.status === 'scheduled' ? 'unblock' : 'promote')}><ArrowRight size={14} />Ready</button>}
               {task.status === 'running' && <button disabled={busy} onClick={() => onAction('review')}><ShieldCheck size={14} />Review</button>}
               {task.status !== 'blocked' && task.status !== 'done' && <button disabled={busy} onClick={() => onAction('block', 'Blocked from Hermes Flow dashboard')}><Ban size={14} />Block</button>}
@@ -478,6 +498,7 @@ function priorityTone(priority: number) { return priority >= 20 ? 'urgent' : pri
 function priorityLabel(priority: number) { return priority >= 20 ? 'Urgent' : priority >= 10 ? 'High' : priority < 0 ? 'Low' : 'Normal' }
 function formatTime(epoch: number) { return new Date(epoch * 1000).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) }
 function relativeTime(epoch: number) { const seconds = Math.max(0, Math.floor(Date.now() / 1000 - epoch)); if (seconds < 60) return 'now'; if (seconds < 3600) return `${Math.floor(seconds / 60)}m`; if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`; return `${Math.floor(seconds / 86400)}d` }
+function formatElapsed(epoch: number) { const seconds = Math.max(0, Math.floor(Date.now() / 1000 - epoch)); const hours = Math.floor(seconds / 3600); const minutes = Math.floor((seconds % 3600) / 60); const secs = seconds % 60; return hours > 0 ? `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}` : `${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}` }
 function eventText(kind: string) { return ({ created: 'Task created', claimed: 'Agent claimed task', status_changed: 'Status changed', completed: 'Task completed', blocked: 'Task blocked', comment: 'Comment added' } as Record<string, string>)[kind] || kind.replaceAll('_', ' ') }
 
 export default App
