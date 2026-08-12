@@ -32,9 +32,9 @@ import {
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from './api'
 import { dropActionForStatus } from './kanban-transitions'
+import { pathForView, routeFromPath, type WorkspaceRoute, type WorkspaceView } from './routes'
 import type { Assignee, Board, KanbanTask, TaskAction, TaskDetail, TaskStatus, WorkspaceOverview } from './types'
 
-type WorkspaceView = 'overview' | 'kanban' | 'sessions' | 'agents' | 'automations' | 'skills' | 'system'
 import './App.css'
 import './workspace.css'
 
@@ -62,7 +62,8 @@ const actionLabels: Record<TaskAction, string> = {
 }
 
 function App() {
-  const [activeView, setActiveView] = useState<WorkspaceView>('overview')
+  const [route, setRoute] = useState<WorkspaceRoute>(() => routeFromPath(window.location.pathname))
+  const activeView: WorkspaceView = route.view === 'skill' ? 'skills' : route.view
   const [boards, setBoards] = useState<Board[]>([])
   const [board, setBoard] = useState('default')
   const [tasks, setTasks] = useState<KanbanTask[]>([])
@@ -79,6 +80,20 @@ function App() {
   const [actionBusy, setActionBusy] = useState(false)
   const [draggedTask, setDraggedTask] = useState<KanbanTask | null>(null)
   const [dragOverStatus, setDragOverStatus] = useState<TaskStatus | null>(null)
+
+  const navigate = useCallback((next: WorkspaceRoute, replace = false) => {
+    const path = next.view === 'skill' ? `/skills/${next.skill}` : pathForView(next.view)
+    window.history[replace ? 'replaceState' : 'pushState']({}, '', path)
+    setRoute(next)
+  }, [])
+
+  useEffect(() => {
+    const onPopState = () => setRoute(routeFromPath(window.location.pathname))
+    window.addEventListener('popstate', onPopState)
+    const canonical = route.view === 'skill' ? `/skills/${route.skill}` : pathForView(route.view)
+    if (window.location.pathname !== canonical) window.history.replaceState({}, '', canonical)
+    return () => window.removeEventListener('popstate', onPopState)
+  }, [route])
 
   const loadBoards = useCallback(async () => {
     const nextBoards = await api.boards()
@@ -174,13 +189,13 @@ function App() {
       <aside className="sidebar">
         <div className="brand-mark"><Bot size={20} /><span>Hermes Workspace</span></div>
         <nav aria-label="Workspace navigation">
-          <button className={activeView === 'overview' ? 'active' : ''} onClick={() => setActiveView('overview')}><LayoutDashboard size={17} /><span>Workspace</span></button>
-          <button className={activeView === 'kanban' ? 'active' : ''} onClick={() => setActiveView('kanban')}><Columns3 size={17} /><span>Kanban</span></button>
-          <button className={activeView === 'sessions' ? 'active' : ''} onClick={() => setActiveView('sessions')}><History size={17} /><span>Sessions</span></button>
-          <button className={activeView === 'agents' ? 'active' : ''} onClick={() => setActiveView('agents')}><Bot size={17} /><span>Agents</span></button>
-          <button className={activeView === 'automations' ? 'active' : ''} onClick={() => setActiveView('automations')}><Activity size={17} /><span>Automations</span></button>
-          <button className={activeView === 'skills' ? 'active' : ''} onClick={() => setActiveView('skills')}><Library size={17} /><span>Skills</span></button>
-          <button className={activeView === 'system' ? 'active' : ''} onClick={() => setActiveView('system')}><Settings size={17} /><span>System</span></button>
+          <button className={activeView === 'overview' ? 'active' : ''} onClick={() => navigate({ view: 'overview' })}><LayoutDashboard size={17} /><span>Workspace</span></button>
+          <button className={activeView === 'kanban' ? 'active' : ''} onClick={() => navigate({ view: 'kanban' })}><Columns3 size={17} /><span>Kanban</span></button>
+          <button className={activeView === 'sessions' ? 'active' : ''} onClick={() => navigate({ view: 'sessions' })}><History size={17} /><span>Sessions</span></button>
+          <button className={activeView === 'agents' ? 'active' : ''} onClick={() => navigate({ view: 'agents' })}><Bot size={17} /><span>Agents</span></button>
+          <button className={activeView === 'automations' ? 'active' : ''} onClick={() => navigate({ view: 'automations' })}><Activity size={17} /><span>Automations</span></button>
+          <button className={activeView === 'skills' ? 'active' : ''} onClick={() => navigate({ view: 'skills' })}><Library size={17} /><span>Skills</span></button>
+          <button className={activeView === 'system' ? 'active' : ''} onClick={() => navigate({ view: 'system' })}><Settings size={17} /><span>System</span></button>
         </nav>
         <div className="sidebar-foot">
           <span className="connection-dot" />
@@ -270,7 +285,7 @@ function App() {
             })}
           </section>
         </div>
-      </main> : <WorkspacePage view={activeView} onNavigate={setActiveView} />}
+      </main> : <WorkspacePage route={route} onNavigate={(view) => navigate({ view })} onOpenSkill={(skill) => navigate({ view: 'skill', skill })} />}
 
       {selectedId && detail && (
         <TaskDrawer
@@ -294,7 +309,7 @@ function App() {
   )
 }
 
-function WorkspacePage({ view, onNavigate }: { view: Exclude<WorkspaceView, 'kanban'>; onNavigate: (view: WorkspaceView) => void }) {
+function WorkspacePage({ route, onNavigate, onOpenSkill }: { route: Exclude<WorkspaceRoute, { view: 'kanban' }>; onNavigate: (view: WorkspaceView) => void; onOpenSkill: (skill: string) => void }) {
   const [overview, setOverview] = useState<WorkspaceOverview | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -304,14 +319,16 @@ function WorkspacePage({ view, onNavigate }: { view: Exclude<WorkspaceView, 'kan
   }, [])
   if (loading) return <main className="workspace-page"><div className="workspace-loading"><LoaderCircle className="spin" /><span>Loading Hermes workspace…</span></div></main>
   if (error || !overview) return <main className="workspace-page"><div className="workspace-error"><Ban /><h2>Workspace unavailable</h2><p>{error}</p></div></main>
-  const title = ({ overview: 'Agent workspace', sessions: 'Sessions', agents: 'Agent profiles', automations: 'Automations', skills: 'Skills library', system: 'System' } as const)[view]
+  const view = route.view === 'skill' ? 'skills' : route.view
+  const title = route.view === 'skill' ? route.skill : ({ overview: 'Agent workspace', sessions: 'Sessions', agents: 'Agent profiles', automations: 'Automations', skills: 'Skills library', system: 'System' } as Record<string, string>)[view]
   return <main className="workspace-page">
     <header className="workspace-toolbar"><div><small>Hermes Agent</small><h1>{title}</h1></div><button className="icon-button" title="Refresh workspace" aria-label="Refresh workspace" onClick={() => window.location.reload()}><RefreshCw size={16} /></button></header>
     {view === 'overview' && <OverviewView data={overview} onNavigate={onNavigate} />}
     {view === 'sessions' && <SessionsView data={overview} />}
     {view === 'agents' && <AgentsView data={overview} />}
     {view === 'automations' && <AutomationsView data={overview} onNavigate={onNavigate} />}
-    {view === 'skills' && <SkillsView data={overview} />}
+    {route.view === 'skills' && <SkillsView data={overview} onOpenSkill={onOpenSkill} />}
+    {route.view === 'skill' && <SkillDetailView data={overview} slug={route.skill} onBack={() => onNavigate('skills')} />}
     {view === 'system' && <SystemView data={overview} />}
   </main>
 }
@@ -330,7 +347,8 @@ function SessionList({ sessions }: { sessions: WorkspaceOverview['sessions'] }) 
 function SessionsView({ data }: { data: WorkspaceOverview }) { return <div className="workspace-content"><section className="workspace-kpis compact"><article><span><History /></span><strong>{data.sessionStats.sessions}</strong><small>Total sessions</small></article><article><span><MessageSquare /></span><strong>{data.sessionStats.messages.toLocaleString()}</strong><small>Messages</small></article><article><span><Database /></span><strong>{data.sessionStats.databaseSize}</strong><small>Database</small></article></section><section className="workspace-card"><header><div><h3>Recent conversation history</h3><p>Real sessions from Hermes state.db</p></div></header><SessionList sessions={data.sessions} /></section></div> }
 function AgentsView({ data }: { data: WorkspaceOverview }) { return <div className="workspace-content"><section className="agent-grid">{data.profiles.map((profile) => <article className="agent-profile-card" key={profile.name}><header><span><Bot size={22} /></span><i className={profile.gateway === 'running' ? 'online' : ''} /></header><h3>{profile.name}</h3><p>{profile.model}</p><dl><div><dt>Gateway</dt><dd>{profile.gateway}</dd></div><div><dt>Distribution</dt><dd>{profile.distribution || 'Local profile'}</dd></div></dl></article>)}</section></div> }
 function AutomationsView({ data, onNavigate }: { data: WorkspaceOverview; onNavigate: (view: WorkspaceView) => void }) { return <div className="workspace-content"><section className="empty-state-panel"><span><Activity size={28} /></span><h2>{data.cron.empty ? 'No scheduled automations yet' : `${data.cron.count} automations configured`}</h2><p>Hermes cron jobs run in fresh agent sessions and can collect data, reason over changes, and deliver results back to your channels.</p><div><button className="primary-button" onClick={() => onNavigate('kanban')}><Columns3 size={15} />View work queue</button></div></section></div> }
-function SkillsView({ data }: { data: WorkspaceOverview }) { return <div className="workspace-content"><section className="skill-grid">{data.skills.map((skill) => <article key={skill.name}><span><Library size={16} /></span><div><h3>{skill.name}</h3><p>{skill.category}</p></div><em>{skill.source}</em></article>)}</section></div> }
+function SkillsView({ data, onOpenSkill }: { data: WorkspaceOverview; onOpenSkill: (skill: string) => void }) { return <div className="workspace-content"><section className="skill-grid">{data.skills.map((skill) => <button onClick={() => onOpenSkill(skill.name)} key={skill.name}><span><Library size={16} /></span><div><h3>{skill.name}</h3><p>{skill.category}</p></div><em>{skill.source}</em></button>)}</section></div> }
+function SkillDetailView({ data, slug, onBack }: { data: WorkspaceOverview; slug: string; onBack: () => void }) { const skill = data.skills.find((item) => item.name === slug); return <div className="workspace-content"><section className="skill-detail"><button className="skill-back" onClick={onBack}><ArrowRight size={14} />All skills</button><span className="skill-detail-icon"><Library size={26} /></span><small>Hermes capability</small><h2>{slug}</h2>{skill ? <><p>This skill is enabled in the active Hermes profile and can be loaded by agents when its workflow matches a task.</p><dl><div><dt>Category</dt><dd>{skill.category}</dd></div><div><dt>Source</dt><dd>{skill.source}</dd></div><div><dt>Trust</dt><dd>{skill.trust}</dd></div><div><dt>Status</dt><dd>{skill.status}</dd></div></dl></> : <><p>This URL points to a skill that is not present in the current overview cache.</p><div className="unknown-skill">Run <code>hermes skills inspect {slug}</code> to inspect it from the CLI.</div></>}</section></div> }
 function SystemView({ data }: { data: WorkspaceOverview }) { const rows = [['Model', data.system.model], ['Provider', data.system.provider], ['Gateway', data.system.gateway], ['Python', data.system.python], ['Hermes source', data.system.project], ['Session database', data.sessionStats.databaseSize]]; return <div className="workspace-content"><section className="workspace-card system-card"><header><div><h3>Runtime diagnostics</h3><p>Current local Hermes Agent configuration</p></div><span className="live-pill"><i />Operational</span></header><div className="system-rows">{rows.map(([label, value]) => <div key={label}><span>{label}</span><strong>{value}</strong></div>)}</div></section><section className="system-modules"><article><Network /><div><strong>Gateway</strong><small>Messaging, cron, and Kanban dispatcher</small></div><em>{data.system.gateway}</em></article><article><Database /><div><strong>State store</strong><small>{data.sessionStats.sessions} sessions indexed</small></div><em>{data.sessionStats.databaseSize}</em></article><article><Cpu /><div><strong>Inference</strong><small>{data.system.provider}</small></div><em>{data.system.model}</em></article></section></div> }
 
 function TaskCard({ task, selected, dragging, onClick, onDragStart, onDragEnd }: { task: KanbanTask; selected: boolean; dragging: boolean; onClick: () => void; onDragStart: (event: React.DragEvent<HTMLButtonElement>) => void; onDragEnd: () => void }) {
