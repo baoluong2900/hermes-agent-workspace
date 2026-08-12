@@ -76,7 +76,7 @@ export type WorkspaceSession = { title: string; workspace: string | null; lastAc
 export type HermesProfile = { name: string; model: string; gateway: string; alias: string | null; distribution: string | null }
 export type HermesSkill = { name: string; category: string; source: string; trust: string; status: string }
 export type SystemStatus = { model: string; provider: string; python: string; gateway: string; project: string; activeSessions: number; scheduledJobs: number }
-export type HermesProject = { slug: string; name: string; primaryPath: string | null; active: boolean }
+export type HermesProject = { slug: string; name: string; primaryPath: string | null; active: boolean; registered: boolean }
 
 export type WorkspaceOverview = {
   sessions: WorkspaceSession[]

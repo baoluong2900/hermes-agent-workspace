@@ -1,5 +1,7 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
+import { readdir } from 'node:fs/promises'
+import path from 'node:path'
 import express from 'express'
 import { z } from 'zod'
 import { parseProjects } from './project-parser'
@@ -142,7 +144,19 @@ app.get('/api/projects', async (_request, response) => {
     const slugs = list.split('\n').map((line) => line.replace(/^\s*\*?\s*/, '').trim().match(/^([a-z0-9][a-z0-9-]*)\s{2,}/)?.[1]).filter((slug): slug is string => Boolean(slug))
     const shows = new Map<string, string>()
     await Promise.all(slugs.map(async (slug) => shows.set(slug, await hermesText(['project', 'show', slug]))))
-    response.json(parseProjects(list, shows))
+    const registered = parseProjects(list, shows).map((project) => ({ ...project, registered: true }))
+    const registeredPaths = new Set(registered.map((project) => project.primaryPath).filter(Boolean))
+    const discoveryRoot = process.env.HERMES_PROJECTS_ROOT || path.join(process.env.HOME || '', 'GitTool')
+    let discovered: Array<{ slug: string; name: string; primaryPath: string; active: boolean; registered: boolean }> = []
+    try {
+      const entries = await readdir(discoveryRoot, { withFileTypes: true })
+      discovered = entries.filter((entry) => entry.isDirectory()).map((entry) => ({ slug: entry.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''), name: entry.name, primaryPath: path.join(discoveryRoot, entry.name), active: false, registered: false })).filter((project) => !registeredPaths.has(project.primaryPath))
+      const gitChecks = await Promise.all(discovered.map(async (project) => {
+        try { await readdir(path.join(project.primaryPath, '.git')); return project } catch { return null }
+      }))
+      discovered = gitChecks.filter((project): project is NonNullable<typeof project> => project !== null)
+    } catch { /* discovery root is optional */ }
+    response.json([...registered, ...discovered].sort((a, b) => Number(b.registered) - Number(a.registered) || a.name.localeCompare(b.name)))
   } catch (error) {
     response.status(500).json({ error: errorMessage(error) })
   }
@@ -157,6 +171,7 @@ app.post('/api/boards', async (request, response) => {
       color: z.string().trim().regex(/^#[0-9a-fA-F]{6}$/).optional(),
       project: boardSchema.optional(),
       defaultWorkdir: z.string().trim().max(2000).optional(),
+      registerProject: z.boolean().optional(),
     }).parse(request.body)
     const args = ['boards', 'create', body.slug]
     if (body.name) args.push('--name', body.name)
@@ -164,6 +179,9 @@ app.post('/api/boards', async (request, response) => {
     if (body.color) args.push('--color', body.color)
     if (body.defaultWorkdir) args.push('--default-workdir', body.defaultWorkdir)
     await hermes(args)
+    if (body.project && body.registerProject && body.defaultWorkdir) {
+      await hermesText(['project', 'create', body.name || body.project, body.defaultWorkdir, '--slug', body.project, '--primary', body.defaultWorkdir])
+    }
     if (body.project) await hermesText(['project', 'bind-board', body.project, body.slug])
     response.status(201).json({ ok: true })
   } catch (error) {

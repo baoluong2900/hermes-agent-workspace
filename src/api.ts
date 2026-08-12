@@ -34,7 +34,7 @@ export const api = {
     workspace?: string
     goal: boolean
   }) => request<unknown>('/api/tasks', { method: 'POST', body: JSON.stringify(input) }),
-  createBoard: (input: { slug: string; name?: string; description?: string; color?: string; project?: string; defaultWorkdir?: string }) =>
+  createBoard: (input: { slug: string; name?: string; description?: string; color?: string; project?: string; defaultWorkdir?: string; registerProject?: boolean }) =>
     request<unknown>('/api/boards', { method: 'POST', body: JSON.stringify(input) }),
   action: (board: string, id: string, action: TaskAction, reason?: string, assignee?: string) =>
     request<unknown>(`/api/tasks/${encodeURIComponent(id)}/action`, {
