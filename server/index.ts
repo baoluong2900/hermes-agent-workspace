@@ -115,6 +115,24 @@ app.get('/api/workspace/profiles', async (_request, response) => {
   catch (error) { response.status(500).json({ error: errorMessage(error) }) }
 })
 
+app.get('/api/model-options', async (_request, response) => {
+  try {
+    const script = "import sys,json; sys.path.insert(0,'/Users/baoluong0209/.hermes/hermes-agent'); from hermes_cli.inventory import build_models_payload,load_picker_context; p=build_models_payload(load_picker_context(),explicit_only=True,canonical_order=True,probe_custom_providers=False); print(json.dumps({'providers':[{'slug':r.get('slug',''),'label':r.get('label') or r.get('slug',''),'models':list(dict.fromkeys(r.get('models') or []))} for r in p.get('providers',[]) if r.get('models')]}))"
+    const { stdout } = await execFileAsync('python3', ['-c', script], { maxBuffer: 5 * 1024 * 1024, timeout: 30_000 })
+    response.json(JSON.parse(stdout.trim().split('\n').at(-1) || '{"providers":[]}'))
+  } catch (error) { response.status(500).json({ error: errorMessage(error) }) }
+})
+
+app.patch('/api/profiles/:name/model', async (request, response) => {
+  try {
+    const name = z.string().regex(/^[a-z0-9][a-z0-9_-]*$/).parse(request.params.name)
+    const body = z.object({ model: z.string().trim().min(1).max(300), provider: z.string().trim().min(1).max(100) }).parse(request.body)
+    await hermesText(['--profile', name, 'config', 'set', 'model', body.model])
+    await hermesText(['--profile', name, 'config', 'set', 'provider', body.provider])
+    response.json({ ok: true, name, ...body })
+  } catch (error) { response.status(400).json({ error: errorMessage(error) }) }
+})
+
 app.get('/api/workspace/skills', async (_request, response) => {
   try { response.json(parseSkills(await hermesText(['skills', 'list']))) }
   catch (error) { response.status(500).json({ error: errorMessage(error) }) }

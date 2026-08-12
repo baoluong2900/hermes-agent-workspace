@@ -1,4 +1,4 @@
-import type { Assignee, Board, HermesProfile, HermesProject, HermesSkill, KanbanTask, SystemStatus, TaskAction, TaskDetail, WorkspaceOverview, WorkspaceSession } from './types'
+import type { Assignee, Board, HermesProfile, HermesProject, HermesSkill, KanbanTask, ModelProvider, SystemStatus, TaskAction, TaskDetail, WorkspaceOverview, WorkspaceSession } from './types'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -14,6 +14,8 @@ export const api = {
   overview: () => request<WorkspaceOverview>('/api/workspace/overview'),
   sessions: () => request<WorkspaceSession[]>('/api/workspace/sessions'),
   profiles: () => request<HermesProfile[]>('/api/workspace/profiles'),
+  modelOptions: () => request<{ providers: ModelProvider[] }>('/api/model-options'),
+  setProfileModel: (name: string, provider: string, model: string) => request<unknown>(`/api/profiles/${encodeURIComponent(name)}/model`, { method: 'PATCH', body: JSON.stringify({ provider, model }) }),
   skills: () => request<HermesSkill[]>('/api/workspace/skills'),
   system: () => request<SystemStatus>('/api/workspace/system'),
   cron: () => request<{ raw: string; empty: boolean }>('/api/workspace/cron'),

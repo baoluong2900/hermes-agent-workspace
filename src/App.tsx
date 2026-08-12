@@ -36,6 +36,7 @@ import { dropActionForStatus } from './kanban-transitions'
 import { closeDialogById } from './dialog'
 import { pathForView, routeFromPath, type WorkspaceRoute, type WorkspaceView } from './routes'
 import type { Assignee, Board, KanbanTask, TaskAction, TaskDetail, TaskStatus, WorkspaceOverview } from './types'
+import type { HermesProfile, ModelProvider } from './types'
 
 import './App.css'
 import './workspace.css'
@@ -349,7 +350,23 @@ function OverviewView({ data, onNavigate }: { data: WorkspaceOverview; onNavigat
 
 function SessionList({ sessions }: { sessions: WorkspaceOverview['sessions'] }) { return <div className="session-list">{sessions.map((session) => <article key={session.id}><span className="session-icon"><MessageSquare size={15} /></span><div><strong>{session.title}</strong><small>{session.workspace || 'General workspace'} · {session.lastActive}</small></div><code>{session.id.slice(-6)}</code></article>)}</div> }
 function SessionsView({ data }: { data: WorkspaceOverview }) { return <div className="workspace-content"><section className="workspace-kpis compact"><article><span><History /></span><strong>{data.sessionStats.sessions}</strong><small>Total sessions</small></article><article><span><MessageSquare /></span><strong>{data.sessionStats.messages.toLocaleString()}</strong><small>Messages</small></article><article><span><Database /></span><strong>{data.sessionStats.databaseSize}</strong><small>Database</small></article></section><section className="workspace-card"><header><div><h3>Recent conversation history</h3><p>Real sessions from Hermes state.db</p></div></header><SessionList sessions={data.sessions} /></section></div> }
-function AgentsView({ data }: { data: WorkspaceOverview }) { return <div className="workspace-content"><section className="agent-grid">{data.profiles.map((profile) => <article className="agent-profile-card" key={profile.name}><header><span><Bot size={22} /></span><i className={profile.gateway === 'running' ? 'online' : ''} /></header><h3>{profile.name}</h3><p>{profile.model}</p><dl><div><dt>Gateway</dt><dd>{profile.gateway}</dd></div><div><dt>Distribution</dt><dd>{profile.distribution || 'Local profile'}</dd></div></dl></article>)}</section></div> }
+function AgentsView({ data }: { data: WorkspaceOverview }) {
+  const [providers, setProviders] = useState<ModelProvider[]>([])
+  const [profiles, setProfiles] = useState<HermesProfile[]>(data.profiles)
+  const [picker, setPicker] = useState<string | null>(null)
+  const [query, setQuery] = useState('')
+  const [busy, setBusy] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  useEffect(() => { void api.modelOptions().then((result) => setProviders(result.providers)).catch((cause) => setError(cause instanceof Error ? cause.message : String(cause))) }, [])
+  const choices = providers.flatMap((provider) => provider.models.map((model) => ({ provider: provider.slug, model }))).filter((choice) => `${choice.provider} ${choice.model}`.toLowerCase().includes(query.toLowerCase())).slice(0, 120)
+  async function choose(profile: HermesProfile, provider: string, model: string) {
+    setBusy(profile.name); setError(null)
+    try { await api.setProfileModel(profile.name, provider, model); setProfiles((current) => current.map((item) => item.name === profile.name ? { ...item, model } : item)); setPicker(null); setQuery('') }
+    catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
+    finally { setBusy(null) }
+  }
+  return <div className="workspace-content">{error && <div className="banner error">{error}</div>}<section className="agent-grid">{profiles.map((profile) => <article className="agent-profile-card" key={profile.name}><header><span><Bot size={22} /></span><i className={profile.gateway === 'running' ? 'online' : ''} /></header><h3>{profile.name}</h3><div className="profile-model-picker"><button disabled={busy === profile.name} onClick={() => { setPicker(picker === profile.name ? null : profile.name); setQuery('') }}><span>{busy === profile.name ? 'Updating model…' : profile.model}</span><ChevronDown size={13} /></button>{picker === profile.name && <div className="model-catalog-popover"><label><Search size={13} /><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search models and providers…" /></label><div className="model-choice-list"><button className="inherit-choice" onClick={() => setPicker(null)}><Bot size={14} /><span><strong>Current profile model</strong><small>{profile.model}</small></span></button>{choices.map((choice) => <button className={choice.model === profile.model ? 'selected' : ''} key={`${choice.provider}:${choice.model}`} onClick={() => void choose(profile, choice.provider, choice.model)}><span><strong>{choice.model}</strong><small>{choice.provider}</small></span>{choice.model === profile.model && <Check size={13} />}</button>)}</div></div>}</div><dl><div><dt>Gateway</dt><dd>{profile.gateway}</dd></div><div><dt>Distribution</dt><dd>{profile.distribution || 'Local profile'}</dd></div></dl></article>)}</section></div>
+}
 function AutomationsView({ data, onNavigate }: { data: WorkspaceOverview; onNavigate: (view: WorkspaceView) => void }) { return <div className="workspace-content"><section className="empty-state-panel"><span><Activity size={28} /></span><h2>{data.cron.empty ? 'No scheduled automations yet' : `${data.cron.count} automations configured`}</h2><p>Hermes cron jobs run in fresh agent sessions and can collect data, reason over changes, and deliver results back to your channels.</p><div><button className="primary-button" onClick={() => onNavigate('kanban')}><Columns3 size={15} />View work queue</button></div></section></div> }
 function SkillsView({ data, onOpenSkill }: { data: WorkspaceOverview; onOpenSkill: (skill: string) => void }) { return <div className="workspace-content"><section className="skill-grid">{data.skills.map((skill) => <button onClick={() => onOpenSkill(skill.name)} key={skill.name}><span><Library size={16} /></span><div><h3>{skill.name}</h3><p>{skill.category}</p></div><em>{skill.source}</em></button>)}</section></div> }
 function SkillDetailView({ data, slug, onBack }: { data: WorkspaceOverview; slug: string; onBack: () => void }) { const skill = data.skills.find((item) => item.name === slug); return <div className="workspace-content"><section className="skill-detail"><button className="skill-back" onClick={onBack}><ArrowRight size={14} />All skills</button><span className="skill-detail-icon"><Library size={26} /></span><small>Hermes capability</small><h2>{slug}</h2>{skill ? <><p>This skill is enabled in the active Hermes profile and can be loaded by agents when its workflow matches a task.</p><dl><div><dt>Category</dt><dd>{skill.category}</dd></div><div><dt>Source</dt><dd>{skill.source}</dd></div><div><dt>Trust</dt><dd>{skill.trust}</dd></div><div><dt>Status</dt><dd>{skill.status}</dd></div></dl></> : <><p>This URL points to a skill that is not present in the current overview cache.</p><div className="unknown-skill">Run <code>hermes skills inspect {slug}</code> to inspect it from the CLI.</div></>}</section></div> }
@@ -363,7 +380,8 @@ function TaskCard({ task, selected, dragging, onClick, onDragStart, onDragEnd }:
     return () => window.clearInterval(timer)
   }, [task.status])
   return (
-    <button className={`task-card ${selected ? 'selected' : ''} ${dragging ? 'dragging' : ''}`} draggable onDragStart={onDragStart} onDragEnd={onDragEnd} onClick={onClick}>
+    <button className={`task-card ${task.status === 'running' ? 'is-running' : ''} ${selected ? 'selected' : ''} ${dragging ? 'dragging' : ''}`} draggable onDragStart={onDragStart} onDragEnd={onDragEnd} onClick={onClick}>
+      {task.status === 'running' && <span className="work-orbit" aria-hidden="true"><i /><i /><i /></span>}
       <div className="task-card-top">{task.priority !== 0 && <span className={`priority priority-${priorityTone(task.priority)}`}>{priorityLabel(task.priority)}</span>}<code>{task.id.slice(0, 10)}</code></div>
       <h3>{task.title}</h3>
       {task.body && <p>{task.body}</p>}
