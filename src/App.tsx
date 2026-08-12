@@ -386,7 +386,6 @@ function TaskCard({ task, selected, dragging, onClick, onDragStart, onDragEnd }:
       <h3>{task.title}</h3>
       {task.body && <p>{task.body}</p>}
       <footer className={task.status === 'running' ? 'running-footer' : ''}>
-        {task.status === 'running' && <span className="running-state"><LoaderCircle className="spin" size={12} />Running</span>}
         <span className="assignee"><UserRound size={12} />{task.assignee || 'Unassigned'}</span>
         <time>{task.status === 'running' ? formatElapsed(task.started_at || task.created_at) : <><Clock3 size={11} />{relativeTime(task.created_at)}</>}</time>
       </footer>
