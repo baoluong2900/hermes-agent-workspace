@@ -36,6 +36,16 @@ import {
   X,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import AnthropicIcon from '@lobehub/icons/es/Claude/components/Mono'
+import DeepSeekIcon from '@lobehub/icons/es/DeepSeek/components/Mono'
+import GeminiIcon from '@lobehub/icons/es/Gemini/components/Mono'
+import GrokIcon from '@lobehub/icons/es/Grok/components/Mono'
+import KimiIcon from '@lobehub/icons/es/Kimi/components/Mono'
+import MinimaxIcon from '@lobehub/icons/es/Minimax/components/Mono'
+import MistralIcon from '@lobehub/icons/es/Mistral/components/Mono'
+import OpenAIIcon from '@lobehub/icons/es/OpenAI/components/Mono'
+import QwenIcon from '@lobehub/icons/es/Qwen/components/Mono'
+import ZhipuIcon from '@lobehub/icons/es/Zhipu/components/Mono'
 import { api } from './api'
 import { agentIdentity, type AgentIcon } from './agent-identity'
 import { modelIdentity } from './model-identity'
@@ -387,7 +397,9 @@ function agentIcon(icon: AgentIcon) {
 
 function ModelMark({ model }: { model: string }) {
   const identity = modelIdentity(model)
-  return <i className={`model-mark model-${identity.family}`} title={identity.label}>{identity.mark}</i>
+  const logos = { claude: AnthropicIcon, openai: OpenAIIcon, gemini: GeminiIcon, qwen: QwenIcon, deepseek: DeepSeekIcon, grok: GrokIcon, kimi: KimiIcon, minimax: MinimaxIcon, glm: ZhipuIcon, mistral: MistralIcon }
+  const Logo = logos[identity.family as keyof typeof logos]
+  return <i className={`model-mark model-${identity.family}`} title={identity.label}>{Logo ? <Logo size={16} /> : <Bot size={14} />}</i>
 }
 function AutomationsView({ data, onNavigate }: { data: WorkspaceOverview; onNavigate: (view: WorkspaceView) => void }) { return <div className="workspace-content"><section className="empty-state-panel"><span><Activity size={28} /></span><h2>{data.cron.empty ? 'No scheduled automations yet' : `${data.cron.count} automations configured`}</h2><p>Hermes cron jobs run in fresh agent sessions and can collect data, reason over changes, and deliver results back to your channels.</p><div><button className="primary-button" onClick={() => onNavigate('kanban')}><Columns3 size={15} />View work queue</button></div></section></div> }
 function SkillsView({ data, onOpenSkill }: { data: WorkspaceOverview; onOpenSkill: (skill: string) => void }) { return <div className="workspace-content"><section className="skill-grid">{data.skills.map((skill) => <button onClick={() => onOpenSkill(skill.name)} key={skill.name}><span><Library size={16} /></span><div><h3>{skill.name}</h3><p>{skill.category}</p></div><em>{skill.source}</em></button>)}</section></div> }

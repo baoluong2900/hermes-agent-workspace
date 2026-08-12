@@ -16,6 +16,7 @@
     "check": "npm run lint && npm test && npm run build"
   },
   "dependencies": {
+    "@lobehub/icons": "^5.16.0",
     "classic-level": "^3.0.0",
     "express": "^5.2.1",
     "lucide-react": "^1.31.0",
